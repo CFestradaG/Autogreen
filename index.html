@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoGreen · Monitor en tiempo real</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#f5f7f4;--card:#ffffff;--text:#1b2a1f;--muted:#5d6b61;--line:#dde4dd;
+  --on:#2e7d32;--off:#8a948c;--bad:#c62828;
+  --c1:#e65100;--c2:#1565c0;--c3:#2e7d32;--c4:#f9a825;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0f1511;--card:#18211b;--text:#e8efe9;--muted:#9aa89d;--line:#2a362d;
+    --on:#66bb6a;--off:#6b756d;--bad:#ef5350;
+    --c1:#ff9f5a;--c2:#64b5f6;--c3:#81c784;--c4:#ffd54f;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.4}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin-bottom:16px}
+h1{font-size:1.3rem;margin:0}
+h1 small{display:block;font-size:.75rem;font-weight:400;color:var(--muted)}
+.status{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--muted)}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--off)}
+.dot.ok{background:var(--on)} .dot.bad{background:var(--bad)}
+.grid{display:grid;gap:12px}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.card h2{font-size:.8rem;font-weight:600;color:var(--muted);margin:0 0 6px;text-transform:uppercase;letter-spacing:.04em}
+.big{font-size:2rem;font-weight:700}
+.big span{font-size:1rem;font-weight:500;color:var(--muted);margin-left:4px}
+.sub{font-size:.78rem;color:var(--muted);margin-top:4px}
+.acts{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:12px}
+.act{display:flex;justify-content:space-between;align-items:center}
+.badge{font-size:.75rem;font-weight:700;padding:3px 10px;border-radius:999px;
+  border:1px solid var(--off);color:var(--off)}
+.badge.on{border-color:var(--on);color:var(--on);background:color-mix(in srgb,var(--on) 12%,transparent)}
+.charts{grid-template-columns:repeat(auto-fit,minmax(380px,1fr))}
+.chartbox{position:relative;height:260px}
+.toolbar{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--muted)}
+select{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:4px 8px}
+footer{margin-top:16px;font-size:.75rem;color:var(--muted)}
+@media (max-width:480px){.charts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>AutoGreen<small>Monitoreo de invernadero · UMG · Grupo 6</small></h1>
+    <div class="toolbar">
+      <label for="n">Mostrar últimas</label>
+      <select id="n">
+        <option value="60">60 lecturas</option>
+        <option value="200" selected>200 lecturas</option>
+        <option value="500">500 lecturas</option>
+        <option value="1000">1000 lecturas</option>
+      </select>
+      <div class="status"><span class="dot" id="dot"></span><span id="estado">Conectando…</span></div>
+    </div>
+  </header>
+
+  <section class="grid kpis">
+    <div class="card"><h2>Temperatura</h2>
+      <div class="big"><b id="v-temp">--</b><span>°C</span></div><div class="sub" id="s-temp"></div></div>
+    <div class="card"><h2>Humedad ambiente</h2>
+      <div class="big"><b id="v-hum">--</b><span>%</span></div><div class="sub" id="s-hum"></div></div>
+    <div class="card"><h2>Humedad del suelo</h2>
+      <div class="big"><b id="v-suelo">--</b><span>%</span></div><div class="sub" id="s-suelo"></div></div>
+    <div class="card"><h2>Luminosidad</h2>
+      <div class="big"><b id="v-lux">--</b><span>lux</span></div><div class="sub" id="s-lux"></div></div>
+  </section>
+
+  <section class="grid acts">
+    <div class="card"><h2>Ventilador</h2><div class="act"><span class="badge" id="b-ventilador">--</span><span class="sub" id="p-ventilador"></span></div></div>
+    <div class="card"><h2>Bomba de riego</h2><div class="act"><span class="badge" id="b-bomba">--</span><span class="sub" id="p-bomba"></span></div></div>
+    <div class="card"><h2>Calefactor</h2><div class="act"><span class="badge" id="b-calefactor">--</span><span class="sub" id="p-calefactor"></span></div></div>
+    <div class="card"><h2>Luz auxiliar</h2><div class="act"><span class="badge" id="b-luz">--</span><span class="sub" id="p-luz"></span></div></div>
+  </section>
+
+  <section class="grid charts">
+    <div class="card"><h2>Temperatura y humedad ambiente</h2><div class="chartbox"><canvas id="c1"></canvas></div></div>
+    <div class="card"><h2>Humedad del suelo y luminosidad</h2><div class="chartbox"><canvas id="c2"></canvas></div></div>
+  </section>
+
+  <footer>
+    Datos: Arduino Uno → puente serial → Supabase (Postgres). Este panel consulta la API REST cada 3 s.
+    Los porcentajes de actuadores son el % de lecturas con estado ON dentro de la ventana mostrada.
+  </footer>
+</div>
+
+<script>
+// ====== CONFIGURACION ======
+// La clave PUBLISHABLE es publica por diseno (solo puede leer por las politicas RLS).
+// NUNCA pongas aqui la clave secret.
+const SUPABASE_URL = "https://ujpdaduyogwzkongatdl.supabase.co";
+const SUPABASE_KEY = "sb_publishable_IacILm4Oq8xuLp-fxGqXxg_Rh2nTsJI";
+const REFRESH_MS = 3000;     // cada cuanto consulta
+const STALE_SECONDS = 30;    // si la ultima lectura es mas vieja, avisa
+
+// ====== UTILIDADES ======
+const $ = id => document.getElementById(id);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const avg = a => a.reduce((s, x) => s + x, 0) / a.length;
+const hora = iso => new Date(iso).toLocaleTimeString("es-GT", {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+
+function stats(rows, campo, dec) {
+  const v = rows.map(r => r[campo]).filter(x => x !== null && x !== undefined);
+  if (!v.length) return "";
+  return `mín ${Math.min(...v).toFixed(dec)} · prom ${avg(v).toFixed(dec)} · máx ${Math.max(...v).toFixed(dec)}`;
+}
+
+// ====== GRAFICAS ======
+function crearChart(canvasId, datasets, dosEjes) {
+  const grid = css("--line"), tick = css("--muted");
+  return new Chart($(canvasId), {
+    type: "line",
+    data: { labels: [], datasets },
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { labels: { color: tick, boxWidth: 12 } } },
+      elements: { point: { radius: 0 }, line: { borderWidth: 2, tension: 0.3 } },
+      scales: {
+        x: { ticks: { color: tick, maxTicksLimit: 6, maxRotation: 0 }, grid: { color: grid } },
+        y: { position: "left", ticks: { color: tick }, grid: { color: grid } },
+        ...(dosEjes ? { y1: { position: "right", ticks: { color: tick }, grid: { drawOnChartArea: false } } } : {})
+      }
+    }
+  });
+}
+const ch1 = crearChart("c1", [
+  { label: "Temperatura (°C)", data: [], borderColor: css("--c1") },
+  { label: "Humedad ambiente (%)", data: [], borderColor: css("--c2") }
+], false);
+const ch2 = crearChart("c2", [
+  { label: "Humedad suelo (%)", data: [], borderColor: css("--c3"), yAxisID: "y" },
+  { label: "Luz (lux)", data: [], borderColor: css("--c4"), yAxisID: "y1" }
+], true);
+
+// ====== CARGA DE DATOS ======
+async function cargar() {
+  if (document.hidden) return;
+  const n = $("n").value;
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/lecturas?select=*&order=created_at.desc&limit=${n}`;
+    const r = await fetch(url, { headers: { apikey: SUPABASE_KEY } });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const rows = (await r.json()).reverse();   // de viejo a nuevo
+    pintar(rows);
+  } catch (e) {
+    $("dot").className = "dot bad";
+    $("estado").textContent = "Sin conexión con Supabase (" + e.message + ")";
+  }
+}
+
+function pintar(rows) {
+  if (!rows.length) {
+    $("dot").className = "dot bad";
+    $("estado").textContent = "Conectado, pero sin lecturas en la tabla";
+    return;
+  }
+  const last = rows[rows.length - 1];
+
+  // KPIs
+  $("v-temp").textContent  = last.temperatura.toFixed(1);
+  $("v-hum").textContent   = last.humedad_ambiente.toFixed(0);
+  $("v-suelo").textContent = last.humedad_suelo;
+  $("v-lux").textContent   = Math.round(last.lux);
+  $("s-temp").textContent  = stats(rows, "temperatura", 1);
+  $("s-hum").textContent   = stats(rows, "humedad_ambiente", 0);
+  $("s-suelo").textContent = stats(rows, "humedad_suelo", 0);
+  $("s-lux").textContent   = stats(rows, "lux", 0);
+
+  // Actuadores
+  for (const a of ["ventilador", "bomba", "calefactor", "luz"]) {
+    const b = $("b-" + a);
+    b.textContent = last[a] ? "ON" : "OFF";
+    b.className = "badge" + (last[a] ? " on" : "");
+    const pct = rows.filter(x => x[a]).length / rows.length * 100;
+    $("p-" + a).textContent = pct.toFixed(0) + "% encendido";
+  }
+
+  // Graficas
+  const labels = rows.map(r => hora(r.created_at));
+  ch1.data.labels = labels;
+  ch1.data.datasets[0].data = rows.map(r => r.temperatura);
+  ch1.data.datasets[1].data = rows.map(r => r.humedad_ambiente);
+  ch1.update("none");
+  ch2.data.labels = labels;
+  ch2.data.datasets[0].data = rows.map(r => r.humedad_suelo);
+  ch2.data.datasets[1].data = rows.map(r => r.lux);
+  ch2.update("none");
+
+  // Estado de conexion segun antiguedad de la ultima lectura
+  const edad = (Date.now() - new Date(last.created_at).getTime()) / 1000;
+  if (edad > STALE_SECONDS) {
+    $("dot").className = "dot bad";
+    $("estado").textContent = `Sin datos nuevos hace ${Math.round(edad)} s (¿puente apagado?)`;
+  } else {
+    $("dot").className = "dot ok";
+    $("estado").textContent = "En vivo · última lectura " + hora(last.created_at);
+  }
+}
+
+$("n").addEventListener("change", cargar);
+cargar();
+setInterval(cargar, REFRESH_MS);
+</script>
+</body>
+</html>

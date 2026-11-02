@@ -1,0 +1,27 @@
+name: Build AutoGreen
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pyinstaller pyserial requests
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: python -m PyInstaller --onefile --name AutoGreen --hidden-import serial.tools.list_ports_windows autogreen.py
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: python -m PyInstaller --onefile --name AutoGreen --hidden-import serial.tools.list_ports_osx autogreen.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoGreen-${{ runner.os }}
+          path: dist/*
