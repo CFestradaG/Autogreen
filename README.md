@@ -1,56 +1,123 @@
 # AutoGreen
 
-Monitor de un invernadero con Arduino, Python, Supabase y GitHub Pages.
+Sistema de monitoreo y control de un invernadero a escala. Un Arduino Uno lee
+los sensores, aplica reglas de control y envía las mediciones por USB a un
+programa Python. Python guarda las lecturas en Supabase y el panel web consulta
+esa base de datos.
 
-- **Panel web:** [AutoGreen · Monitor en tiempo real](https://cfestradag.github.io/Autogreen/)
+- **Panel publicado:** [AutoGreen · Monitor en tiempo real](https://cfestradag.github.io/Autogreen/)
 - **Repositorio:** [CFestradaG/Autogreen](https://github.com/CFestradaG/Autogreen)
-
-## Cómo funciona
-
-```text
-Arduino --USB/Serial--> autogreen.py --REST--> Supabase <--REST-- Panel web
-                                                                  (GitHub Pages)
-```
-
-GitHub Pages publica el panel, pero no ejecuta el lector Python. Para que el
-panel muestre lecturas, hay que ejecutar `autogreen.py` en una computadora
-conectada al Arduino. El lector envía los registros a Supabase y el panel los
-consulta aproximadamente cada 3 segundos.
+- **Firmware:** [AutoGreen1.1.ino](./AutoGreen1.1.ino)
 
 ## Requisitos
 
-- Python 3.9 o posterior.
-- Git para descargar el repositorio.
-- Arduino conectado por USB, con el programa (sketch) del proyecto cargado.
-- Conexión a Internet para enviar y consultar datos en Supabase.
-- Una tabla `public.lecturas` en Supabase y sus permisos de lectura para el
-  panel.
+- Arduino Uno y el circuito descrito en [Hardware y conexiones](#hardware-y-conexiones).
+- Cable USB de datos para programar el Arduino y conectar el lector Python.
+- Python 3.9 o posterior para ejecutar [autogreen.py](./autogreen.py).
+- Conexión a Internet para comunicarse con Supabase.
+- Proyecto Supabase con la tabla `public.lecturas` y una clave **secret** para el
+  programa Python.
+- Git para clonar el repositorio, o descargar el proyecto como ZIP.
 
-El Arduino debe enviar por el puerto serial a **9600 baudios** un bloque con
-estos campos y nombres:
+El panel en GitHub Pages es público y estático. No necesita Python instalado en
+el equipo que lo visita; Python sí debe estar instalado en la computadora
+conectada por USB al Arduino.
 
-```text
-Temperatura: 25.4 C
-Humedad ambiente: 60.2 %
-Humedad suelo: 55 %
-Luminosidad: 5000 lux
-Ventilador: OFF
-Bomba: OFF
-Calefactor: ON
-Luz: OFF
+## Descargar e instalar
+
+### Descargar el repositorio
+
+En Terminal (macOS/Linux) o PowerShell (Windows):
+
+```sh
+git clone https://github.com/CFestradaG/Autogreen.git
+cd Autogreen
 ```
 
-El lector guarda una lectura cada 5 segundos de forma predeterminada. Cierra el
-Monitor Serial del Arduino IDE antes de ejecutar el lector: dos programas no
-pueden usar el mismo puerto serial al mismo tiempo.
+### macOS
 
-## Configuración de Supabase
+Instala Python 3 si aún no está disponible y verifica la instalación:
 
-El proyecto debe tener una tabla `public.lecturas` con estos campos:
+```sh
+python3 --version
+```
 
-| Campo | Tipo sugerido |
+En la carpeta del proyecto, crea un entorno e instala las dependencias:
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install requests pyserial
+```
+
+### Linux (Ubuntu/Debian)
+
+Instala Python, Git y el soporte para entornos virtuales:
+
+```sh
+sudo apt update
+sudo apt install git python3 python3-venv python3-pip
+```
+
+En la carpeta del proyecto:
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install requests pyserial
+```
+
+Si no tienes permiso para abrir el puerto serial, en Ubuntu/Debian agrega tu
+usuario al grupo `dialout` y vuelve a iniciar sesión:
+
+```sh
+sudo usermod -aG dialout "$USER"
+```
+
+### Windows
+
+Instala Python 3 y Git. Durante la instalación de Python, habilita **Add Python
+to PATH**. En PowerShell, desde la carpeta del proyecto:
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install requests pyserial
+```
+
+Si PowerShell no permite activar el entorno, puedes omitir la activación:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install requests pyserial
+```
+
+## Preparar el Arduino
+
+1. Abre [AutoGreen1.1.ino](./AutoGreen1.1.ino) en Arduino IDE.
+2. Selecciona **Arduino Uno** como placa y el puerto USB correspondiente.
+3. Instala estas bibliotecas desde el gestor de bibliotecas del IDE:
+   - **DHT sensor library** de Adafruit.
+   - **Adafruit Unified Sensor**, dependencia de la biblioteca DHT.
+   - **LiquidCrystal_I2C** de Frank de Brabander.
+   - `Wire` ya viene con el entorno Arduino.
+4. Compila y sube el sketch al Arduino.
+5. Cierra el Monitor Serial antes de iniciar Python; ambos programas no pueden
+   usar simultáneamente el mismo puerto.
+
+El sketch transmite texto por serial a **9600 baudios**. El lector Python espera
+los nombres de campos que produce el firmware, por lo que cambiar el formato
+de `Serial.print()` requiere actualizar también el analizador Python.
+
+## Configurar Supabase
+
+El programa espera una tabla `public.lecturas` con estos campos:
+
+| Campo | Tipo |
 |---|---|
-| `id` | `bigint` (clave primaria autogenerada) |
+| `id` | `bigint`, clave primaria autogenerada |
 | `created_at` | `timestamptz` |
 | `temperatura` | `double precision` |
 | `humedad_ambiente` | `double precision` |
@@ -61,8 +128,7 @@ El proyecto debe tener una tabla `public.lecturas` con estos campos:
 | `calefactor` | `boolean` |
 | `luz` | `boolean` |
 
-Si la tabla todavía no existe, puedes crearla desde **Supabase → SQL Editor**
-con:
+Si la tabla aún no existe, puedes crearla desde **Supabase → SQL Editor**:
 
 ```sql
 create table public.lecturas (
@@ -88,184 +154,242 @@ to anon
 using (true);
 ```
 
-La política permite que cualquier visitante del panel público lea las
-mediciones. No permite insertar, actualizar ni borrar registros como usuario
-anónimo. Si ya existe la tabla o una política equivalente, no vuelvas a crear
-la tabla o la política; verifica que los campos y el permiso `SELECT` para
-`anon` estén configurados.
+La política permite que visitantes anónimos lean las mediciones desde el panel;
+no les da permisos de escritura. Si ya tienes la tabla o una política
+equivalente, verifica su estructura y permisos en lugar de volver a crearla.
 
-### Clave para el lector
+### Claves y credenciales
 
-El lector Python necesita una clave **secret** de Supabase para insertar datos.
-En el Dashboard, busca la clave secret del proyecto en la sección de claves de
-API. En el primer inicio, el programa solicitará la URL del proyecto y la
-clave; puedes presionar Enter para conservar la URL predeterminada del
-proyecto. La clave se guarda localmente en `config.json`.
+- **Python:** necesita la clave **secret** del proyecto para insertar registros.
+  En el primer inicio solicita la URL de Supabase y la clave; la URL del
+  proyecto incluida en el programa se ofrece como valor predeterminado.
+- **Panel web:** utiliza una clave **publishable** para hacer consultas de
+  lectura sujetas a RLS.
+- La clave secret permite escritura y **nunca debe publicarse** en el código
+  HTML, GitHub Pages ni el repositorio.
 
-**No compartas ni subas `config.json` o una clave secret a GitHub. Nunca pongas
-la clave secret en `index.html` ni en GitHub Pages.** El panel usa una clave
-publishable para sus consultas de solo lectura; esa clave no reemplaza la clave
-secret que usa el lector para escribir.
+Python guarda sus credenciales en `config.json`, junto al archivo o ejecutable.
+Ese archivo está excluido de Git por `.gitignore`. También puedes configurar
+`SUPABASE_URL` y `SUPABASE_KEY` como variables de entorno; tienen prioridad
+sobre `config.json`.
 
-También se pueden definir las variables `SUPABASE_URL` y `SUPABASE_KEY` antes
-de ejecutar el programa. Cuando están definidas, tienen prioridad sobre
-`config.json`.
+## Ejecutar el lector
 
-## Descargar el proyecto
-
-Abre Terminal (macOS/Linux) o PowerShell (Windows) y ejecuta:
-
-```sh
-git clone https://github.com/CFestradaG/Autogreen.git
-cd Autogreen
-```
-
-## Ejecutar en macOS
-
-Instala Python 3 si aún no está instalado. Puedes comprobarlo con:
-
-```sh
-python3 --version
-```
-
-Desde la carpeta del proyecto, crea un entorno e instala las dependencias:
-
-```sh
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install requests pyserial
-```
-
-Comprueba si se detecta el Arduino y luego inicia el lector:
+Con el Arduino conectado, el firmware cargado y el entorno virtual activado:
 
 ```sh
 python autogreen.py --listar
 python autogreen.py
 ```
 
-Si hay más de un puerto, especifica el que corresponda, por ejemplo:
+En Windows puedes usar `python` o `py -3`, según la instalación. El primer
+inicio pedirá la URL y la clave secret de Supabase. Si hay más de un puerto
+serial, selecciona el del Arduino o indícalo expresamente:
 
 ```sh
+# macOS
 python autogreen.py --puerto /dev/cu.usbmodem1101
-```
 
-En algunos Arduino clonados se necesita instalar el controlador del chip USB
-(por ejemplo, CH340).
-
-## Ejecutar en Linux
-
-En Ubuntu/Debian, instala Python, Git y el soporte para entornos virtuales:
-
-```sh
-sudo apt update
-sudo apt install git python3 python3-venv python3-pip
-```
-
-Desde la carpeta del proyecto:
-
-```sh
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install requests pyserial
-python autogreen.py --listar
-python autogreen.py
-```
-
-Si el puerto aparece pero no tienes permiso para abrirlo, agrega tu usuario al
-grupo serial de la distribución (normalmente `dialout` en Ubuntu/Debian) y
-vuelve a iniciar sesión:
-
-```sh
-sudo usermod -aG dialout "$USER"
-```
-
-No ejecutes el programa con `sudo` como solución habitual: puede crear
-archivos de configuración propiedad de `root`.
-
-Para especificar el puerto, por ejemplo:
-
-```sh
+# Linux
 python autogreen.py --puerto /dev/ttyACM0
-```
 
-## Ejecutar en Windows
-
-Instala Python 3 y Git. Durante la instalación de Python, habilita **Add Python
-to PATH**. Abre PowerShell en la carpeta del proyecto y ejecuta:
-
-```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install requests pyserial
-python autogreen.py --listar
-python autogreen.py
-```
-
-Si PowerShell no permite activar el entorno, puedes omitir la activación y usar
-directamente:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install requests pyserial
-.\.venv\Scripts\python.exe autogreen.py
-```
-
-Para especificar el puerto, reemplaza `COM3` por el que muestre el Administrador
-de dispositivos o `--listar`:
-
-```powershell
+# Windows
 python autogreen.py --puerto COM3
 ```
 
-## Opciones del lector
+El lector guarda una lectura cada **5 segundos** de forma predeterminada. Se
+detiene con **Ctrl+C**. La computadora y el proceso deben permanecer activos
+para que lleguen nuevas mediciones.
 
-Ejecuta `python autogreen.py --help` para ver todas las opciones. Las más
-comunes son:
+### Opciones útiles
 
-| Comando | Uso |
+| Comando | Efecto |
 |---|---|
-| `python autogreen.py` | Detecta el Arduino y envía lecturas a Supabase. |
-| `python autogreen.py --listar` | Lista los puertos seriales disponibles y sale. |
-| `python autogreen.py --puerto COM3` | Usa un puerto específico; en macOS/Linux indica la ruta del dispositivo. |
-| `python autogreen.py --sim` | Genera lecturas simuladas en lugar de leer el Arduino. |
-| `python autogreen.py --sin-nube` | Solo muestra datos localmente; no los guarda ni aparecerán en el panel. |
-| `python autogreen.py --reconfigurar` | Solicita de nuevo la URL y la clave de Supabase. |
-| `python autogreen.py --intervalo 5` | Define cada cuántos segundos guarda una lectura. |
+| `python autogreen.py --listar` | Muestra los puertos seriales disponibles y sale. |
+| `python autogreen.py --sim --sin-nube` | Prueba el lector con datos simulados sin escribir en Supabase. |
+| `python autogreen.py --sim` | Simula lecturas y las envía a Supabase usando las credenciales configuradas. |
+| `python autogreen.py --sin-nube` | Lee el Arduino y muestra datos localmente, sin guardarlos. |
+| `python autogreen.py --reconfigurar` | Solicita de nuevo URL y clave de Supabase. |
+| `python autogreen.py --intervalo 10` | Guarda una lectura cada 10 segundos. |
 
-Para detener el lector, presiona **Ctrl+C**. Deja la terminal y la computadora
-encendidas mientras quieras que se sigan enviando datos.
+## Cómo está construido
 
-## Ver el panel
+### Hardware y conexiones
 
-Abre [AutoGreen en GitHub Pages](https://cfestradag.github.io/Autogreen/).
-Cuando el Arduino esté conectado, el lector esté ejecutándose y Supabase reciba
-lecturas, el panel mostrará los valores y las gráficas. El simulador produce
-datos ficticios; úsalo solo si quieres que esos datos también se guarden en
-Supabase.
+El prototipo utiliza un Arduino Uno con sensores de ambiente y actuadores de
+baja tensión. El Arduino procesa las lecturas y controla las salidas; los
+motores y las tiras de LED de 12 V reciben energía de una fuente aparte y se
+conmutan mediante módulos relé.
 
-Los cambios a `index.html` se publican en GitHub Pages según la configuración
-de Pages del repositorio. Ejecutar el lector Python no publica cambios en el
-sitio.
+| Componente | Conexiones al Arduino | Función |
+|---|---|---|
+| Arduino Uno | USB a la computadora; adaptador de 12 V / 2 A al conector de alimentación, según el montaje documentado | Lee sensores, ejecuta el control y comunica datos por serial. |
+| DHT22 | Datos a `D2`, alimentación controlada desde `D7`, GND a tierra | Mide temperatura y humedad ambiente. |
+| Sensor capacitivo de suelo v1.2 | `VCC` a 5 V, `GND` a tierra, salida analógica a `A0` | Estima el porcentaje de humedad del suelo. |
+| Módulo LDR | `VCC` a 5 V, `GND` a tierra, salida `AO` a `A3` | Estima la luminosidad; `DO` no se usa. |
+| LCD 16x2 con adaptador I2C | `VCC` a 5 V, `GND` a tierra, `SDA` a `A4`, `SCL` a `A5` | Muestra las cuatro mediciones; dirección I2C `0x27`. |
+| Relé 1 y ventilador de 5 V | `IN` del relé a `D8`; carga conectada a través de `COM` y `NO` | Enciende el ventilador según la temperatura. |
+| Relé 2 y bomba peristáltica de 12 V | `IN` del relé a `D9`; alimentación de la bomba conmutada por `COM` y `NO` | Riega cuando el suelo está seco. |
+| LED amarillo con resistencia de 220 Ω | Ánodo en serie con la resistencia hacia `D10`; cátodo a GND | Representa el calefactor; no es un calefactor real. |
+| Relé 3 y módulos LED blancos de 12 V | `IN` del relé a `D11`; alimentación de los LED conmutada por `COM` y `NO` | Enciende la luz auxiliar cuando hay poca luminosidad. |
+
+Los relés documentados son de 5 V y **disparo bajo**: `LOW` los activa y
+`HIGH` los desactiva. En el montaje se emplean una fuente de 12 V para las
+cargas de 12 V, fusibles en las líneas de la bomba y de los LED, y tierra
+común según el esquema del proyecto. La bomba lleva un diodo 1N4007 en paralelo
+(cátodo, marcado con franja, al positivo) y un capacitor de 220 µF / 25 V en
+sus terminales. En el riel de 5 V se documentan capacitores de 100 µF y 470 µF.
+
+**Seguridad:** utiliza únicamente fuentes de baja tensión adecuadas y verifica
+polaridad, fusibles y cableado antes de alimentar el circuito. No conectes
+voltaje de red a los pines del Arduino ni a una protoboard. Los contactos de
+relé y la presencia de una fuente separada no sustituyen una instalación
+eléctrica segura. El cableado anterior resume el montaje del proyecto; ante una
+diferencia, confirma el esquema físico antes de energizarlo.
+
+### Firmware Arduino: lectura y control
+
+El programa del Arduino es [AutoGreen1.1.ino](./AutoGreen1.1.ino). Su flujo
+principal es:
+
+1. `setup()` inicia serial a 9600 baudios, activa e inicializa el DHT22, inicia
+   el LCD y configura los pines de los actuadores. Los relés parten desactivados
+   (`HIGH`) y el LED del calefactor parte apagado (`LOW`).
+2. `loop()` repite la lectura de sensores, el control automático, la actualización
+   del LCD y la impresión serial, con pausas breves; el ciclo dura
+   aproximadamente un segundo.
+3. `leerSensores()` lee el DHT22, promedia 20 muestras del sensor de suelo y
+   cinco del LDR. Convierte las lecturas analógicas a porcentajes y a una escala
+   aproximada de lux.
+4. `controlAutomatico()` aplica los umbrales y activa las salidas. La bomba y
+   la luz auxiliar tienen histéresis: usan distintos límites para encender y
+   apagar y mantienen la salida anterior entre esos límites.
+5. `mostrarLCD()` presenta temperatura y humedad ambiente en la primera fila,
+   y humedad del suelo y luminosidad en la segunda.
+6. `mostrarSerial()` imprime un bloque de texto que Python puede interpretar.
+
+Si el DHT22 falla, el firmware conserva los últimos valores válidos. Después de
+tres fallas consecutivas corta su alimentación desde `D7`, espera, la restablece
+y reinicializa el sensor.
+
+#### Umbrales del sketch
+
+| Variable | Regla | Salida |
+|---|---|---|
+| Temperatura | Si es mayor que 35 °C, enciende el ventilador; de lo contrario, lo apaga. | Relé 1, `D8` |
+| Temperatura | Si es menor que 30 °C, enciende el LED amarillo que representa el calefactor. | `D10` |
+| Humedad del suelo | Menor que 40 % enciende la bomba; mayor que 50 % la apaga. Entre ambos límites conserva el estado anterior. | Relé 2, `D9` |
+| Luminosidad estimada | Menor que 4,000 lux enciende la luz auxiliar; mayor que 6,000 lux la apaga. Entre ambos límites conserva el estado anterior. | Relé 3, `D11` |
+
+Los límites de temperatura son valores de demostración del sketch. La
+luminosidad en lux también es una estimación lineal calibrada para este
+prototipo, no una medición fotométrica exacta.
+
+#### Calibración analógica del firmware
+
+| Entrada | Referencias crudas usadas por `map()` | Escala resultante |
+|---|---|---|
+| Suelo, `A0` | ADC 1014 al aire/seco y 242 en agua | 0 % seco a 100 % húmedo |
+| LDR, `A3` | ADC 1014 en oscuridad y 610 con luz de habitación | 0 a 10,000 lux aproximados |
+
+La lectura depende de la calibración de este sensor y montaje; si se cambian
+los sensores, conviene volver a medir sus valores extremos y ajustar el sketch.
+
+### Python: puerto serial y envío
+
+[autogreen.py](./autogreen.py) es el puente entre el Arduino y Supabase. No se
+ejecuta en GitHub Pages; corre en la computadora conectada al Arduino.
+
+- `pyserial` abre el puerto seleccionado o detectado a **9600 baudios** y lee
+  líneas con `readline()`.
+- El analizador acumula las líneas de temperatura, humedad, suelo, luminosidad
+  y actuadores hasta completar el bloque serial; convierte números y estados
+  `ON`/`OFF` a los tipos que se guardan en la tabla.
+- Si el puerto se desconecta, intenta reconectarlo. Si no llegan datos durante
+  un tiempo, muestra una advertencia.
+- Al inicio comprueba el acceso a la tabla de Supabase. Cada cinco segundos
+  añade `created_at` en UTC y envía el registro por REST con `requests`.
+- Si falla Internet, conserva hasta 1,000 registros pendientes en memoria y
+  vuelve a intentar enviarlos con la siguiente lectura. Esa cola no es
+  persistente: al cerrar el programa se pierde.
+
+El programa ignora los primeros bloques si temperatura y humedad del DHT22
+llegan como cero al arrancar. La opción `--sim` sustituye el puerto serial con
+valores ficticios; no prueba los sensores físicos.
+
+### Supabase: almacenamiento y API
+
+Supabase recibe los registros en el endpoint REST de la tabla
+`/rest/v1/lecturas`. Python inserta un objeto con las mediciones y el instante
+UTC. La tabla almacena valores numéricos, estados booleanos y la fecha de cada
+lectura.
+
+La clave secret configurada en Python se utiliza para escribir. El panel
+consulta con la clave publishable desde el navegador y solo puede leer si la
+política RLS de la tabla autoriza `SELECT` al rol `anon`. Debido a que el panel
+es público, cualquier visitante puede consultar las mediciones expuestas por
+esa política; no configures una política anónima de escritura.
+
+### Panel HTML y GitHub Pages
+
+[index.html](./index.html) implementa el panel estático. El navegador hace una
+consulta REST directa a Supabase cada **3 segundos**, pide las últimas lecturas
+(200 por defecto; se puede seleccionar 60, 200, 500 o 1,000) y presenta:
+
+- Último valor de temperatura, humedad ambiente, humedad de suelo y
+  luminosidad.
+- Mínimo, promedio y máximo dentro de la ventana seleccionada.
+- Estado reportado y porcentaje de lecturas `ON` de cada actuador.
+- Gráficas de temperatura/humedad ambiente y humedad del suelo/luminosidad.
+- Un aviso si no hay lecturas nuevas durante más de 30 segundos.
+
+Chart.js se carga desde un CDN. GitHub Pages publica los archivos estáticos del
+repositorio; **no ejecuta el programa Python, no tiene acceso al puerto USB y
+no recibe directamente los datos del Arduino**. Para desplegar cambios del
+panel, publica el `index.html` actualizado en la rama y ruta configuradas en
+GitHub Pages. Para ver mediciones, además debe estar funcionando el lector
+Python en una computadora conectada al Arduino.
+
+### Recorrido completo de una lectura
+
+```text
+Sensores
+  → Arduino (lee, calcula umbrales y controla las salidas)
+  → USB / serial a 9600 baudios
+  → autogreen.py (analiza el bloque y añade fecha UTC)
+  → API REST de Supabase (inserta en public.lecturas)
+  → index.html en GitHub Pages (consulta las lecturas y actualiza el panel)
+```
+
+### Interpretación del estado de bomba y luz
+
+El firmware conserva correctamente el estado físico de la bomba entre 40 % y
+50 % de humedad del suelo, y el de la luz entre 4,000 y 6,000 lux. Sin embargo,
+las líneas `Bomba:` y `Luz:` que `mostrarSerial()` imprime se calculan solo con
+la condición de encendido, no leyendo el estado real de la salida. Por ello, en
+la zona de histéresis el estado serial, el booleano guardado por Python y el
+estado físico pueden no coincidir. El porcentaje de actuadores del panel se
+calcula a partir de esos estados seriales reportados.
 
 ## Solución de problemas
 
-- **“Conectado, pero sin lecturas en la tabla” en el panel:** comprueba que el
-  lector esté activo, que el Arduino envíe datos y que Supabase reciba filas en
-  `lecturas`.
-- **No se detecta el Arduino:** revisa el cable USB de datos, el controlador
-  del dispositivo y el puerto indicado por `python autogreen.py --listar`.
-- **Puerto ocupado:** cierra el Monitor Serial del Arduino IDE y vuelve a
-  iniciar el lector.
-- **El Arduino no envía datos:** verifica que el sketch esté cargado, que use
-  `Serial.begin(9600)` y que emita los nombres de campo indicados arriba.
-- **Supabase responde 401/403:** revisa que `config.json` o `SUPABASE_KEY`
-  contenga una clave secret vigente; la clave publishable/anon no sirve para
-  escribir.
-- **Supabase responde 404 o no encuentra la tabla:** verifica que exista
-  `public.lecturas` y que los nombres de columnas coincidan con la tabla de
-  este README.
-- **El panel no muestra datos recientes:** revisa que la política RLS permita
-  `SELECT` al rol `anon` y que la clave publishable de `index.html` corresponda
-  al proyecto Supabase.
+- **El panel dice que no hay lecturas:** comprueba que Python esté ejecutándose,
+  que el Arduino esté enviando datos y que se estén insertando filas en
+  `public.lecturas`.
+- **No aparece el Arduino en `--listar`:** prueba un cable USB de datos, revisa
+  el puerto del sistema e instala el controlador USB del clon (por ejemplo,
+  CH340) si corresponde.
+- **El puerto está ocupado:** cierra el Monitor Serial de Arduino IDE y otras
+  aplicaciones que lo estén usando.
+- **No hay datos seriales:** confirma que el sketch cargado sea el correcto y
+  que use `Serial.begin(9600)`.
+- **Supabase responde 401/403:** revisa la URL y que Python tenga una clave
+  secret vigente; la publishable/anon es para lectura y no reemplaza la secret
+  de escritura.
+- **Supabase no encuentra la tabla o columnas:** verifica `public.lecturas` y
+  los nombres/tipos indicados en la tabla de este README.
+- **El panel indica error de lectura:** revisa el permiso `SELECT` para `anon`,
+  la clave publishable y que la configuración de Supabase coincida con la del
+  panel.
+- **El panel carga, pero marca datos antiguos:** el lector se detuvo, perdió la
+  conexión con el Arduino o no logra enviar lecturas a Supabase.
