@@ -1,0 +1,7 @@
+.venv/
+config.json
+__pycache__/
+*.py[cod]
+dist/
+build/
+.DS_Store
